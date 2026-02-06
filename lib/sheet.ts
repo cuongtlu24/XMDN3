@@ -18,39 +18,56 @@ export type BizRecord = {
 };
 
 function parseCsv(text: string): string[][] {
-  const lines = (text || "")
-    .replace(/\r/g, "")
-    .split("\n")
-    .filter((l) => l.trim() !== "");
+  // Robust CSV parser that supports commas AND newlines inside quoted fields.
+  // Google Sheets CSV can contain multi-line cells (addresses), which will break
+  // line-splitting approaches.
+  const s = (text || "").replace(/\r/g, "");
+  const rows: string[][] = [];
 
-  return lines.map((line) => {
-    const out: string[] = [];
-    let cell = "";
-    let inQuotes = false;
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
 
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
 
-      if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          cell += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-        continue;
-      }
-
-      if (ch === "," && !inQuotes) {
-        out.push(cell.trim());
-        cell = "";
+    if (ch === '"') {
+      // Escaped quote inside quoted string => ""
+      if (inQuotes && s[i + 1] === '"') {
+        cell += '"';
+        i++;
       } else {
-        cell += ch;
+        inQuotes = !inQuotes;
       }
+      continue;
     }
-    out.push(cell.trim());
-    return out;
-  });
+
+    if (!inQuotes && ch === ",") {
+      row.push(cell.trim());
+      cell = "";
+      continue;
+    }
+
+    if (!inQuotes && ch === "\n") {
+      // End of record
+      row.push(cell.trim());
+      cell = "";
+      // Skip empty lines
+      if (row.some((v) => v !== "")) rows.push(row);
+      row = [];
+      continue;
+    }
+
+    cell += ch;
+  }
+
+  // Flush last cell/row
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell.trim());
+    if (row.some((v) => v !== "")) rows.push(row);
+  }
+
+  return rows;
 }
 
 function norm(s: string) {
