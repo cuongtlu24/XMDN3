@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { noStore } from "next/cache";
+import { unstable_noStore as noStore } from "next/cache";
+
 import { notFound } from "next/navigation";
 
 import BusinessCard from "@/components/BusinessCard";
