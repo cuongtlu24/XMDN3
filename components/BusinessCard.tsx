@@ -3,25 +3,17 @@ import type { BizRecord } from "@/lib/sheet";
 // ✅ FB-friendly: content must be visible (no display:none / aria-hidden)
 export default function BusinessCard({ biz }: { biz: BizRecord }) {
   const desc =
-    biz.description ||
-    "This website provides official business information, contact details, and support for inquiries.";
+    "This site publishes official business details and contact information for verification and customer support.";
 
-  // ✅ Tự tạo email theo subdomain/slug (hoặc dùng biz.email nếu sau này bạn có field đó)
-  const sub =
-    (biz as any).slug ||
-    (biz as any).subdomain ||
-    ""; // fallback
+  const sub = (biz.slug || "").trim();
 
-  const email =
-    (biz as any).email ||
-    (sub ? `email@${sub}.bmverification.com` : "");
+  const email = (biz.email || "").trim() || (sub ? `email@${sub}.bmverification.com` : "");
+  const website = (biz.website || "").trim();
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <header className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-semibold leading-tight">
-          {biz.name}
-        </h1>
+        <h1 className="text-2xl md:text-3xl font-semibold leading-tight">{biz.businessName || "Business"}</h1>
         <p className="mt-2 text-sm md:text-base text-muted-foreground">{desc}</p>
       </header>
 
@@ -61,13 +53,13 @@ export default function BusinessCard({ biz }: { biz: BizRecord }) {
           <div>
             <div className="font-semibold">Website</div>
             <div className="text-muted-foreground">
-              {biz.website ? (
+              {website ? (
                 <a
-                  href={biz.website}
+                  href={website}
                   rel="nofollow noopener noreferrer"
                   className="underline underline-offset-4"
                 >
-                  {biz.website}
+                  {website}
                 </a>
               ) : (
                 "N/A"
@@ -92,7 +84,21 @@ export default function BusinessCard({ biz }: { biz: BizRecord }) {
       </nav>
 
       <footer className="mt-8 text-xs text-muted-foreground">
-        © {new Date().getFullYear()} {biz.name}. All rights reserved.
+        <div>
+          © {new Date().getFullYear()} {biz.businessName || "Business"}. All rights reserved.
+        </div>
+        <div className="mt-1">
+          {website ? (
+            <>
+              Website: {" "}
+              <a href={website} rel="nofollow noopener noreferrer" className="underline underline-offset-4">
+                {website}
+              </a>
+            </>
+          ) : (
+            ""
+          )}
+        </div>
       </footer>
     </main>
   );

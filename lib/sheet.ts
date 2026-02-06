@@ -2,19 +2,19 @@ import { cache } from "react";
 
 // ✅ Public Google Sheet CSV
 export const SHEET_URL =
-  "https://docs.google.com/spreadsheets/d/e/2PACX-1vQmi6oayoemKBJXEWi4pkVHDsm166ap0XCwbopYrukBQnwj2gERseGlDnJVBrtciHwKEFj5bTqFLGiQ/pub?output=csv";
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRuhYBuTRYdpdh-qvRrr8cPlvSLiDSgRqkTn5tSLsQmErRentHQdUZz9idNd9ihYaohYemQ-9Sx3as6/pub?gid=0&single=true&output=csv";
 
 export type BizRecord = {
-  slug: string; // subdomain / slug
-  name: string; // legal / business name
-  address: string;
-  taxId?: string;
-  phone?: string;
-  website?: string;
-  fbToken?: string; // facebook-domain-verification token
-  description?: string;
-  image?: string;
-  status?: string; // optional (col 7)
+  // Sheet columns (A → I)
+  slug: string; // Column A (Subdomain)
+  businessName: string; // Column B (Tên công ty)
+  address: string; // Column C (Địa chỉ)
+  taxId: string; // Column D (Tax ID)
+  phone: string; // Column E (Số điện thoại)
+  website: string; // Column F (Web)
+  email: string; // Column G (Email)
+  fbDomainVerificationHtml: string; // Column H (Veridomain fb html)
+  dnsStatus: string; // Column I (DNS Status)
 };
 
 function parseCsv(text: string): string[][] {
@@ -58,7 +58,13 @@ function norm(s: string) {
 }
 
 function normKey(s: string) {
-  return norm(s).toLowerCase().replace(/\s+/g, "_");
+  // Normalize Vietnamese headers like "Cột A (Subdomain)" → "cot_a_subdomain"
+  return norm(s)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function cleanUrl(s?: string) {
@@ -67,7 +73,7 @@ function cleanUrl(s?: string) {
   return v.replace(/\\\//g, "/");
 }
 
-function extractFbToken(raw: string) {
+export function extractFbToken(raw: string) {
   const s = (raw || "").trim();
   if (!s) return "";
 
@@ -82,23 +88,18 @@ function extractFbToken(raw: string) {
 }
 
 /**
- * ✅ Ưu tiên: CSV có header -> map theo tên cột
- * ✅ Fallback: không có header -> dùng index theo format của bạn:
- *   [0]=slug, [1]=name, [2]=address, [3]=tax/document, [4]=phone,
- *   [5]=image(optional), [6]=fbToken(optional), [7]=status(optional), [8]=website(optional)
+ * ✅ Ưu tiên: CSV có header -> map theo tên cột.
+ * Sheet mới (A → I):
+ * A Subdomain | B Company | C Address | D Tax ID | E Phone | F Website | G Email | H FB html | I DNS Status
  */
 function rowsToRecords(rows: string[][]): BizRecord[] {
   if (!rows.length) return [];
 
   const first = rows[0].map(normKey);
   const hasHeader =
-    first.includes("slug") ||
-    first.includes("subdomain") ||
-    first.includes("legal_name") ||
-    first.includes("name") ||
-    first.includes("website") ||
-    first.includes("website_url") ||
-    first.includes("fb_token");
+    first.some((x) => x.includes("subdomain")) ||
+    first.some((x) => x.startsWith("cot_a")) ||
+    first.includes("slug");
 
   if (hasHeader) {
     const header = first;
@@ -117,61 +118,57 @@ function rowsToRecords(rows: string[][]): BizRecord[] {
     return rows
       .slice(1)
       .map((r) => {
-        const slug = pick(r, "slug", "subdomain");
-        const name = pick(r, "legal_name", "name", "business_name");
-        const address = pick(r, "address", "address_line1");
-        const taxId = pick(r, "tax_id", "taxid", "ein", "document");
-        const phone = pick(r, "business_phone", "phone", "business_phone_number");
-        const website = cleanUrl(pick(r, "website", "website_url", "site"));
-        const fbToken = extractFbToken(
-          pick(r, "fb_token", "facebook_domain_verification", "token")
-        );
-        const description = pick(r, "description", "desc");
-        const image = pick(r, "image", "logo", "cover");
-        const status = pick(r, "status");
+        const slug = pick(r, "cot_a_subdomain", "subdomain", "slug");
+        const businessName = pick(r, "cot_b_ten_cong_ty", "company", "business_name", "name");
+        const address = pick(r, "cot_c_dia_chi", "address");
+        const taxId = pick(r, "cot_d_tax_id", "tax_id", "ein", "taxid");
+        const phone = pick(r, "cot_e_so_dien_thoai", "phone", "business_phone");
+        const website = cleanUrl(pick(r, "cot_f_web", "website", "site"));
+        const email = pick(r, "cot_g_email", "email");
+        const fbHtml = pick(r, "cot_h_veridomain_fb_html", "facebook_domain_verification", "fb_html", "fb_token");
+        const dnsStatus = pick(r, "cot_i_dns_status", "dns_status", "status");
 
         return {
           slug: norm(slug),
-          name: norm(name),
+          businessName: norm(businessName),
           address: norm(address),
-          taxId: norm(taxId) || undefined,
-          phone: norm(phone) || undefined,
-          website: website || undefined,
-          fbToken: fbToken || undefined,
-          description: norm(description) || undefined,
-          image: norm(image) || undefined,
-          status: norm(status) || undefined,
+          taxId: norm(taxId),
+          phone: norm(phone),
+          website: website,
+          email: norm(email),
+          fbDomainVerificationHtml: norm(fbHtml),
+          dnsStatus: norm(dnsStatus),
         } as BizRecord;
       })
-      .filter((x) => x.slug && x.name);
+      .filter((x) => x.slug && x.businessName);
   }
 
-  // ✅ Fallback format theo sheet bạn đang dùng (không header)
+  // ✅ Fallback: không có header (theo thứ tự cột A → I)
   return rows
     .map((r) => {
       const slug = norm(r?.[0] || "");
-      const name = norm(r?.[1] || "");
+      const businessName = norm(r?.[1] || "");
       const address = norm(r?.[2] || "");
       const taxId = norm(r?.[3] || "");
       const phone = norm(r?.[4] || "");
-      const image = norm(r?.[5] || "");
-      const fbToken = extractFbToken(norm(r?.[6] || ""));
-      const status = norm(r?.[7] || "");
-      const website = cleanUrl(norm(r?.[8] || ""));
+      const website = cleanUrl(norm(r?.[5] || ""));
+      const email = norm(r?.[6] || "");
+      const fbHtml = norm(r?.[7] || "");
+      const dnsStatus = norm(r?.[8] || "");
 
       return {
         slug,
-        name,
+        businessName,
         address,
-        taxId: taxId || undefined,
-        phone: phone || undefined,
-        website: website || undefined, // ✅ lấy website cột cuối
-        fbToken: fbToken || undefined,
-        image: image || undefined,
-        status: status || undefined,
+        taxId,
+        phone,
+        website,
+        email,
+        fbDomainVerificationHtml: fbHtml,
+        dnsStatus,
       } as BizRecord;
     })
-    .filter((x) => x.slug && x.name);
+    .filter((x) => x.slug && x.businessName);
 }
 
 // ✅ cache() để dedupe fetch trong cùng request
