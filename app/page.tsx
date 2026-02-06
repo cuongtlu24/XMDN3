@@ -1,0 +1,80 @@
+import type { Metadata } from "next";
+import { noStore } from "next/cache";
+import { notFound } from "next/navigation";
+
+import BusinessCard from "@/components/BusinessCard";
+import LandingClient from "./LandingClient";
+import { fetchBizRecords } from "@/lib/sheet";
+import { normalizeSlugCell, resolveWantedSlug } from "@/lib/resolve";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
+// ✅ Meta facebook-domain-verification theo subdomain
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams?: Record<string, any>;
+}): Promise<Metadata> {
+  noStore();
+
+  const wanted = await resolveWantedSlug(searchParams);
+  if (!wanted) return {};
+
+  try {
+    const rows = await fetchBizRecords();
+    const biz = rows.find((r) => normalizeSlugCell(r.slug) === wanted);
+    const token = biz?.fbToken || "";
+    return token ? { other: { "facebook-domain-verification": token } } : {};
+  } catch {
+    return {};
+  }
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams?: Record<string, any>;
+}) {
+  noStore();
+
+  const wanted = await resolveWantedSlug(searchParams);
+
+  // Apex domain -> trang giới thiệu chung
+  if (!wanted) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-10">
+        <h1 className="text-2xl font-semibold">Business Directory</h1>
+        <p className="mt-2 text-muted-foreground">
+          This site serves business pages by subdomain. Please open the correct
+          subdomain to view business details.
+        </p>
+      </main>
+    );
+  }
+
+  const list = await fetchBizRecords();
+  const biz = list.find((r) => normalizeSlugCell(r.slug) === wanted);
+  if (!biz) return notFound();
+
+  // ✅ Data for old LandingClient UI (optional)
+  const bizDataForClient = {
+    subdomain: biz.slug || wanted,
+    name: biz.name || "N/A",
+    address: biz.address || "N/A",
+    document: biz.taxId || "N/A",
+    phone: biz.phone || "N/A",
+    image: biz.image || "",
+  };
+
+  return (
+    <>
+      {/* ✅ FB-friendly: visible business information (SSR) */}
+      <BusinessCard biz={biz} />
+
+      {/* ✅ Optional: keep your existing UI below */}
+      <LandingClient bizData={bizDataForClient} />
+    </>
+  );
+}
