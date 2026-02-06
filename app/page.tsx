@@ -84,13 +84,14 @@ export default async function Home({
     // website: biz.website || "N/A",
   };
 
-  return (
-    <>
-      {/* ✅ FB-friendly: visible business information (SSR) */}
-      <BusinessCard biz={biz} />
+return (
+  <>
+    {/* ✅ Keep your existing UI first */}
+    <LandingClient bizData={bizDataForClient} />
 
-      {/* ✅ Optional: keep your existing UI below */}
-      <LandingClient bizData={bizDataForClient} />
-    </>
-  );
+    {/* ✅ FB-friendly: visible business information (SSR) */}
+    <BusinessCard biz={biz} />
+  </>
+);
+
 }
