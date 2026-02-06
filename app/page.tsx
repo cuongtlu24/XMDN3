@@ -1,10 +1,11 @@
+
 import type { Metadata } from "next";
 import { unstable_noStore as noStore } from "next/cache";
-
 import { notFound } from "next/navigation";
 
 import BusinessCard from "@/components/BusinessCard";
 import LandingClient from "./LandingClient";
+
 import { fetchBizRecords } from "@/lib/sheet";
 import { normalizeSlugCell, resolveWantedSlug } from "@/lib/resolve";
 
@@ -12,15 +13,20 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
-// ✅ Meta facebook-domain-verification theo subdomain
+type SearchParams = Record<string, string | string[] | undefined>;
+
+// ✅ Meta facebook-domain-verification theo subdomain hoặc ?__sub=
 export async function generateMetadata({
   searchParams,
 }: {
-  searchParams?: Record<string, any>;
+  // ✅ Next 15/16: searchParams thường là Promise
+  searchParams: Promise<SearchParams>;
 }): Promise<Metadata> {
   noStore();
 
-  const wanted = await resolveWantedSlug(searchParams);
+  const sp = await searchParams;
+
+  const wanted = await resolveWantedSlug(sp);
   if (!wanted) return {};
 
   try {
@@ -36,11 +42,13 @@ export async function generateMetadata({
 export default async function Home({
   searchParams,
 }: {
-  searchParams?: Record<string, any>;
+  // ✅ Next 15/16: searchParams thường là Promise
+  searchParams: Promise<SearchParams>;
 }) {
   noStore();
 
-  const wanted = await resolveWantedSlug(searchParams);
+  const sp = await searchParams;
+  const wanted = await resolveWantedSlug(sp);
 
   // Apex domain -> trang giới thiệu chung
   if (!wanted) {
@@ -50,6 +58,11 @@ export default async function Home({
         <p className="mt-2 text-muted-foreground">
           This site serves business pages by subdomain. Please open the correct
           subdomain to view business details.
+        </p>
+
+        {/* ✅ Tip: test nhanh bằng __sub */}
+        <p className="mt-4 text-sm text-muted-foreground">
+          Tip: You can test with <code>?__sub=cuongpham</code>
         </p>
       </main>
     );
@@ -67,6 +80,8 @@ export default async function Home({
     document: biz.taxId || "N/A",
     phone: biz.phone || "N/A",
     image: biz.image || "",
+    // nếu LandingClient có dùng website, bạn thêm:
+    // website: biz.website || "N/A",
   };
 
   return (
