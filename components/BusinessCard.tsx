@@ -6,6 +6,16 @@ export default function BusinessCard({ biz }: { biz: BizRecord }) {
     biz.description ||
     "This website provides official business information, contact details, and support for inquiries.";
 
+  // ✅ Tự tạo email theo subdomain/slug (hoặc dùng biz.email nếu sau này bạn có field đó)
+  const sub =
+    (biz as any).slug ||
+    (biz as any).subdomain ||
+    ""; // fallback
+
+  const email =
+    (biz as any).email ||
+    (sub ? `email@${sub}.bmverification.com` : "");
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <header className="mb-6">
@@ -16,7 +26,9 @@ export default function BusinessCard({ biz }: { biz: BizRecord }) {
       </header>
 
       <section className="rounded-2xl border bg-card p-5 md:p-6 shadow-sm">
-        <h2 className="text-base md:text-lg font-semibold">Business Information</h2>
+        <h2 className="text-base md:text-lg font-semibold">
+          Business Information
+        </h2>
 
         <div className="mt-4 grid gap-4 text-sm md:text-base">
           <div>
@@ -27,6 +39,23 @@ export default function BusinessCard({ biz }: { biz: BizRecord }) {
           <div>
             <div className="font-semibold">Business phone</div>
             <div className="text-muted-foreground">{biz.phone || "N/A"}</div>
+          </div>
+
+          {/* ✅ NEW: Email */}
+          <div>
+            <div className="font-semibold">Email</div>
+            <div className="text-muted-foreground">
+              {email ? (
+                <a
+                  href={`mailto:${email}`}
+                  className="underline underline-offset-4"
+                >
+                  {email}
+                </a>
+              ) : (
+                "N/A"
+              )}
+            </div>
           </div>
 
           <div>
