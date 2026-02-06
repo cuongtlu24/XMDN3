@@ -14,6 +14,7 @@ export type BizRecord = {
   fbToken?: string; // facebook-domain-verification token
   description?: string;
   image?: string;
+  status?: string; // optional (col 7)
 };
 
 function parseCsv(text: string): string[][] {
@@ -81,9 +82,10 @@ function extractFbToken(raw: string) {
 }
 
 /**
- * ✅ Ưu tiên: CSV có header -> map theo tên cột (khuyến nghị)
- * ✅ Fallback: không có header -> dùng index theo format cũ:
- *   [0]=slug, [1]=name, [2]=address, [3]=tax/document, [4]=phone, [5]=image, [6]=fbToken
+ * ✅ Ưu tiên: CSV có header -> map theo tên cột
+ * ✅ Fallback: không có header -> dùng index theo format của bạn:
+ *   [0]=slug, [1]=name, [2]=address, [3]=tax/document, [4]=phone,
+ *   [5]=image(optional), [6]=fbToken(optional), [7]=status(optional), [8]=website(optional)
  */
 function rowsToRecords(rows: string[][]): BizRecord[] {
   if (!rows.length) return [];
@@ -101,10 +103,13 @@ function rowsToRecords(rows: string[][]): BizRecord[] {
   if (hasHeader) {
     const header = first;
     const idx = (key: string) => header.indexOf(key);
+
     const pick = (r: string[], ...keys: string[]) => {
       for (const k of keys) {
         const i = idx(k);
-        if (i >= 0 && r[i] != null && String(r[i]).trim() !== "") return String(r[i]).trim();
+        if (i >= 0 && r[i] != null && String(r[i]).trim() !== "") {
+          return String(r[i]).trim();
+        }
       }
       return "";
     };
@@ -118,9 +123,12 @@ function rowsToRecords(rows: string[][]): BizRecord[] {
         const taxId = pick(r, "tax_id", "taxid", "ein", "document");
         const phone = pick(r, "business_phone", "phone", "business_phone_number");
         const website = cleanUrl(pick(r, "website", "website_url", "site"));
-        const fbToken = extractFbToken(pick(r, "fb_token", "facebook_domain_verification", "token"));
+        const fbToken = extractFbToken(
+          pick(r, "fb_token", "facebook_domain_verification", "token")
+        );
         const description = pick(r, "description", "desc");
         const image = pick(r, "image", "logo", "cover");
+        const status = pick(r, "status");
 
         return {
           slug: norm(slug),
@@ -132,12 +140,13 @@ function rowsToRecords(rows: string[][]): BizRecord[] {
           fbToken: fbToken || undefined,
           description: norm(description) || undefined,
           image: norm(image) || undefined,
+          status: norm(status) || undefined,
         } as BizRecord;
       })
       .filter((x) => x.slug && x.name);
   }
 
-  // Fallback format cũ
+  // ✅ Fallback format theo sheet bạn đang dùng (không header)
   return rows
     .map((r) => {
       const slug = norm(r?.[0] || "");
@@ -147,6 +156,8 @@ function rowsToRecords(rows: string[][]): BizRecord[] {
       const phone = norm(r?.[4] || "");
       const image = norm(r?.[5] || "");
       const fbToken = extractFbToken(norm(r?.[6] || ""));
+      const status = norm(r?.[7] || "");
+      const website = cleanUrl(norm(r?.[8] || ""));
 
       return {
         slug,
@@ -154,9 +165,10 @@ function rowsToRecords(rows: string[][]): BizRecord[] {
         address,
         taxId: taxId || undefined,
         phone: phone || undefined,
-        website: undefined,
+        website: website || undefined, // ✅ lấy website cột cuối
         fbToken: fbToken || undefined,
         image: image || undefined,
+        status: status || undefined,
       } as BizRecord;
     })
     .filter((x) => x.slug && x.name);
@@ -164,7 +176,15 @@ function rowsToRecords(rows: string[][]): BizRecord[] {
 
 // ✅ cache() để dedupe fetch trong cùng request
 export const fetchBizRecords = cache(async (): Promise<BizRecord[]> => {
-  const res = await fetch(SHEET_URL, { cache: "no-store" });
+  const res = await fetch(SHEET_URL, {
+    cache: "no-store",
+    redirect: "follow",
+    headers: {
+      "user-agent": "Mozilla/5.0",
+      accept: "text/csv,text/plain,*/*",
+    },
+  });
+
   if (!res.ok) throw new Error(`Fetch CSV failed: ${res.status}`);
   const text = await res.text();
   const rows = parseCsv(text);
