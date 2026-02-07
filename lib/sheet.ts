@@ -18,56 +18,39 @@ export type BizRecord = {
 };
 
 function parseCsv(text: string): string[][] {
-  // Robust CSV parser that supports commas AND newlines inside quoted fields.
-  // Google Sheets CSV can contain multi-line cells (addresses), which will break
-  // line-splitting approaches.
-  const s = (text || "").replace(/\r/g, "");
-  const rows: string[][] = [];
+  const lines = (text || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .filter((l) => l.trim() !== "");
 
-  let row: string[] = [];
-  let cell = "";
-  let inQuotes = false;
+  return lines.map((line) => {
+    const out: string[] = [];
+    let cell = "";
+    let inQuotes = false;
 
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
 
-    if (ch === '"') {
-      // Escaped quote inside quoted string => ""
-      if (inQuotes && s[i + 1] === '"') {
-        cell += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
       }
-      continue;
+
+      if (ch === "," && !inQuotes) {
+        out.push(cell.trim());
+        cell = "";
+      } else {
+        cell += ch;
+      }
     }
-
-    if (!inQuotes && ch === ",") {
-      row.push(cell.trim());
-      cell = "";
-      continue;
-    }
-
-    if (!inQuotes && ch === "\n") {
-      // End of record
-      row.push(cell.trim());
-      cell = "";
-      // Skip empty lines
-      if (row.some((v) => v !== "")) rows.push(row);
-      row = [];
-      continue;
-    }
-
-    cell += ch;
-  }
-
-  // Flush last cell/row
-  if (cell.length > 0 || row.length > 0) {
-    row.push(cell.trim());
-    if (row.some((v) => v !== "")) rows.push(row);
-  }
-
-  return rows;
+    out.push(cell.trim());
+    return out;
+  });
 }
 
 function norm(s: string) {
@@ -110,82 +93,143 @@ export function extractFbToken(raw: string) {
  * A Subdomain | B Company | C Address | D Tax ID | E Phone | F Website | G Email | H FB html | I DNS Status
  */
 function rowsToRecords(rows: string[][]): BizRecord[] {
-  if (!rows.length) return [];
+  // Google Sheets CSV typically includes a header row. We support both:
+  // 1) Header-based mapping (Vietnamese/English headers)
+  // 2) Index-based mapping (A..I) as a fallback when headers are unexpected
+  const first = rows[0] || [];
+  const normFirst = first.map((h) => normKey(h));
 
-  const first = rows[0].map(normKey);
   const hasHeader =
-    first.some((x) => x.includes("subdomain")) ||
-    first.some((x) => x.startsWith("cot_a")) ||
-    first.includes("slug");
+    normFirst.some((h) => h.includes("subdomain")) ||
+    normFirst.some((h) => h.includes("tencongty") || (h.includes("ten") && h.includes("congty")) || h.includes("company")) ||
+    normFirst.some((h) => h.includes("taxid") || h.includes("tax")) ||
+    normFirst.some((h) => h.includes("diachi") || h.includes("address"));
 
-  if (hasHeader) {
-    const header = first;
-    const idx = (key: string) => header.indexOf(key);
+  const headerMap = hasHeader
+    ? Object.fromEntries(first.map((h, i) => [normKey(h), i]))
+    : {};
 
-    const pick = (r: string[], ...keys: string[]) => {
-      for (const k of keys) {
-        const i = idx(k);
-        if (i >= 0 && r[i] != null && String(r[i]).trim() !== "") {
-          return String(r[i]).trim();
-        }
+  const findIdxByIncludes = (includesAny: string[]) => {
+    if (!hasHeader) return -1;
+    for (let i = 0; i < normFirst.length; i++) {
+      const k = normFirst[i] || "";
+      if (includesAny.some((t) => k.includes(t))) return i;
+    }
+    return -1;
+  };
+
+  // Prefer exact keys (fast), then fallback to fuzzy "includes"
+  const idx = hasHeader
+    ? {
+        subdomain:
+          headerMap["cot_a_subdomain"] ??
+          headerMap["subdomain"] ??
+          findIdxByIncludes(["subdomain"]),
+        businessName:
+          headerMap["cot_b_ten_cong_ty"] ??
+          headerMap["ten_cong_ty"] ??
+          headerMap["company_name"] ??
+          headerMap["business_name"] ??
+          findIdxByIncludes(["tencongty", "company", "businessname", "companyname"]),
+        address:
+          headerMap["cot_c_dia_chi"] ??
+          headerMap["dia_chi"] ??
+          headerMap["address"] ??
+          findIdxByIncludes(["diachi", "address"]),
+        taxId:
+          headerMap["cot_d_tax_id"] ??
+          headerMap["tax_id"] ??
+          headerMap["taxid"] ??
+          findIdxByIncludes(["taxid", "tax"]),
+        phone:
+          headerMap["cot_e_so_dien_thoai"] ??
+          headerMap["so_dien_thoai"] ??
+          headerMap["phone"] ??
+          headerMap["business_phone"] ??
+          findIdxByIncludes(["sodienthoai", "phone"]),
+        website:
+          headerMap["cot_f_web"] ??
+          headerMap["web"] ??
+          headerMap["website"] ??
+          findIdxByIncludes(["website", "web", "site"]),
+        email:
+          headerMap["cot_g_email"] ??
+          headerMap["email"] ??
+          findIdxByIncludes(["email"]),
+        veridomainHtml:
+          headerMap["cot_h_veridomain_fb_html"] ??
+          headerMap["veridomain_fb_html"] ??
+          headerMap["veridomain"] ??
+          headerMap["html"] ??
+          findIdxByIncludes(["veridomain", "html"]),
+        dnsStatus:
+          headerMap["cot_i_dns_status"] ??
+          headerMap["dns_status"] ??
+          headerMap["dnsstatus"] ??
+          findIdxByIncludes(["dnsstatus", "dns_status", "dns"]),
       }
-      return "";
-    };
+    : {
+        // No header: fixed positions A..I
+        subdomain: 0,
+        businessName: 1,
+        address: 2,
+        taxId: 3,
+        phone: 4,
+        website: 5,
+        email: 6,
+        veridomainHtml: 7,
+        dnsStatus: 8,
+      };
 
-    return rows
-      .slice(1)
-      .map((r) => {
-        const slug = pick(r, "cot_a_subdomain", "subdomain", "slug");
-        const businessName = pick(r, "cot_b_ten_cong_ty", "company", "business_name", "name");
-        const address = pick(r, "cot_c_dia_chi", "address");
-        const taxId = pick(r, "cot_d_tax_id", "tax_id", "ein", "taxid");
-        const phone = pick(r, "cot_e_so_dien_thoai", "phone", "business_phone");
-        const website = cleanUrl(pick(r, "cot_f_web", "website", "site"));
-        const email = pick(r, "cot_g_email", "email");
-        const fbHtml = pick(r, "cot_h_veridomain_fb_html", "facebook_domain_verification", "fb_html", "fb_token");
-        const dnsStatus = pick(r, "cot_i_dns_status", "dns_status", "status");
+  const start = hasHeader ? 1 : 0;
 
-        return {
-          slug: norm(slug),
-          businessName: norm(businessName),
-          address: norm(address),
-          taxId: norm(taxId),
-          phone: norm(phone),
-          website: website,
-          email: norm(email),
-          fbDomainVerificationHtml: norm(fbHtml),
-          dnsStatus: norm(dnsStatus),
-        } as BizRecord;
-      })
-      .filter((x) => x.slug && x.businessName);
+  const out: BizRecord[] = [];
+  for (let r = start; r < rows.length; r++) {
+    const row = rows[r] || [];
+
+    const cell = (i: number) => (i >= 0 ? (row[i] ?? "") : "");
+
+    // Primary (header/index) extraction
+    let slug = normalizeSubdomain(cell(idx.subdomain));
+    let businessName = String(cell(idx.businessName) || "").trim();
+    let address = String(cell(idx.address) || "").trim();
+    let phone = String(cell(idx.phone) || "").trim();
+    let taxId = String(cell(idx.taxId) || "").trim();
+    let website = cleanUrl(String(cell(idx.website) || "").trim());
+    let email = String(cell(idx.email) || "").trim();
+    let veridomainHtml = String(cell(idx.veridomainHtml) || "");
+    let dnsStatus = String(cell(idx.dnsStatus) || "").trim();
+
+    // Fallback: if we have a valid businessName but other fields are empty,
+    // try fixed A..I positions (handles weird/changed headers).
+    if (businessName && row.length >= 6 && (!address && !phone && !website && !email)) {
+      slug = normalizeSubdomain(row[0] ?? subdomain);
+      businessName = String(row[1] ?? businessName).trim();
+      address = String(row[2] ?? "").trim();
+      taxId = String(row[3] ?? "").trim();
+      phone = String(row[4] ?? "").trim();
+      website = cleanUrl(String(row[5] ?? "").trim());
+      email = String(row[6] ?? "").trim();
+      veridomainHtml = String(row[7] ?? "");
+      dnsStatus = String(row[8] ?? "").trim();
+    }
+
+    if (!slug || !businessName) continue;
+
+    out.push({
+      slug,
+      businessName,
+      address,
+      phone,
+      email,
+      website,
+      taxId,
+      veridomainHtml,
+      dnsStatus,
+    });
   }
 
-  // ✅ Fallback: không có header (theo thứ tự cột A → I)
-  return rows
-    .map((r) => {
-      const slug = norm(r?.[0] || "");
-      const businessName = norm(r?.[1] || "");
-      const address = norm(r?.[2] || "");
-      const taxId = norm(r?.[3] || "");
-      const phone = norm(r?.[4] || "");
-      const website = cleanUrl(norm(r?.[5] || ""));
-      const email = norm(r?.[6] || "");
-      const fbHtml = norm(r?.[7] || "");
-      const dnsStatus = norm(r?.[8] || "");
-
-      return {
-        slug,
-        businessName,
-        address,
-        taxId,
-        phone,
-        website,
-        email,
-        fbDomainVerificationHtml: fbHtml,
-        dnsStatus,
-      } as BizRecord;
-    })
-    .filter((x) => x.slug && x.businessName);
+  return out;
 }
 
 // ✅ cache() để dedupe fetch trong cùng request
